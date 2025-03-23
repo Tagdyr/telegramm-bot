@@ -1,0 +1,99 @@
+import logging
+import openai
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message
+from aiogram.utils import executor
+
+# === КОНФИГУРАЦИЯНЫ ЖАЗЫҢЫЗ === 
+BOT_TOKEN = "7631467855:AAFPFe0caWYSRJxkC8n-3DKPwYtM9X_puhE"
+OPENAI_API_KEY = "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"
+ADMIN_IDS = [7868084991]  # Админдердин Telegram ID тизмеси
+
+# === ЛОГДУ ЖӨНДӨӨ ===
+logging.basicConfig(level=logging.INFO)
+
+# === OPENAI БААЛЫКТАРЫН ОРНОТУУ ===
+openai.api_key = OPENAI_API_KEY
+
+# === БОТ ЖАНА ДИСПЕТЧЕР ТҮЗҮҮ ===
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
+
+# === /start буйругу ===
+@dp.message_handler(commands=['start'])
+async def start_cmd(message: Message):
+    await message.reply(
+        "Саламатсызбы! Мен ChatGPT менен сүрөт жарата алган ботмун.\n"
+        "Суроолоруңузду жазыңыз же буйруктарды колдонуңуз:\n"
+        "• /members – топтогу мүчөлөрдүн санын билүү\n"
+        "• /image [сүрөттүн сүрөттөлүшү] – сүрөт жаратуу\n"
+        "• /broadcast [текст] – админ үчүн жалпы билдирүү"
+    )
+
+# === /members буйругу: Топтогу мүчөлөрдүн санын көрсөтүү ===
+@dp.message_handler(commands=['members'])
+async def get_members_count(message: Message):
+    if message.chat.type in ['group', 'supergroup']:
+        count = await bot.get_chat_member_count(message.chat.id)
+        await message.reply(f"Бул топто {count} колдонуучу бар.")
+    else:
+        await message.reply("Бул буйрук топто гана иштейт.")
+
+# === /broadcast буйругу: Админге жалпы билдирүү ===
+@dp.message_handler(commands=['broadcast'])
+async def broadcast(message: Message):
+    # Колдонуучу админби же жокпу текшерүү
+    if message.from_user.id != ADMIN_ID:
+        return await message.reply("Бул буйрук админге гана жеткиликтүү.")
+    
+    # /broadcast буйругунан кийинки тексти алуу
+    text = message.text.replace("/broadcast", "").strip()
+    if not text:
+        return await message.reply("Пайдалануу: /broadcast [билдирүү]")
+    
+    # Ушул эле чатка (топко) жалпы билдирүү
+    # Эгер баардык колдонуучуларга жөнөтүү керек болсо, кошумча база же ыкма керек.
+    await bot.send_message(message.chat.id, text)
+    await message.reply("Билдирүү жөнөтүлдү!")
+
+# === /image буйругу: Сүрөт жаратуу (DALL·E) ===
+@dp.message_handler(commands=['image'])
+async def generate_image(message: Message):
+    prompt = message.text.replace("/image", "").strip()
+    if not prompt:
+        return await message.reply("Пайдалануу: /image [сүрөттүн сүрөттөлүшү]")
+    
+    try:
+        response = openai.Image.create(
+            prompt=prompt,
+            n=1,
+            size="512x512"
+        )
+        image_url = response["data"][0]["url"]
+        await message.reply_photo(photo=image_url, caption="Мына, сүрөтүңүз!")
+    except Exception as e:
+        logging.error(f"Сүрөт жаратууда ката: {e}")
+        await message.reply("Сүрөт жаратууда ката кетти, кайрадан аракет кылып көрүңүз.")
+
+# === ChatGPT менен баарлашуу ===
+@dp.message_handler()
+async def chat_with_gpt(message: Message):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Же gpt-4, эгер аккаунтуңузда жеткиликтүү болсо
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": message.text}
+            ],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        answer = response.choices[0].message.content
+        await message.reply(answer)
+    except Exception as e:
+        logging.error(f"GPT менен баарлашууда ката: {e}")
+        await message.reply("ChatGPT менен баарлашууда ката кетти, кийинчерээк аракет кылып көрүңүз.")
+
+# === Ботту ишке киргизүү ===
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
